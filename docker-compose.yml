@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  backend:
+    container_name: singlespark-backend
+    build:
+      context: .
+      dockerfile: ./cmd/backend/Dockerfile
+    command: ./app
+    working_dir: /app
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=26257
+      - DB_USER=root
+      - DB_NAME=singlespark
+      - DB_SSLMODE=disable
+    depends_on:
+      - db
+    networks:
+      - singlespark-net
+    volumes:
+      - ./internal:/app/internal
+      - ./pkg:/app/pkg
+      - ./config:/app/config
+
+  frontend:
+    container_name: singlespark-frontend
+    build:
+      context: ./ui
+      dockerfile: ./ui/Dockerfile
+    ports:
+      - "5173:5173"
+    networks:
+      - singlespark-net
+    depends_on:
+      - backend
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+
+  db:
+    container_name: singlespark-db
+    image: cockroachdb/cockroach:v25.3.3
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+      - "8081:8080"
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    networks:
+      - singlespark-net
+
+volumes:
+  cockroach-data:
+
+networks:
+  singlespark-net:
+    driver: bridge

@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  # ────────────────
+  # Backend (Go)
+  # ────────────────
+  backend:
+    # Sobrescribe el comando del Dockerfile para usar hot reload
+    command: sh -c "air -c .air.toml"
+    working_dir: /src
+    volumes:
+      - ./backend:/src         # Sincroniza código local
+      - /src/tmp               # Evita conflictos con cachés
+    ports:
+      - "8081:8080"            # Mismo puerto que en prod
+    environment:
+      - APP_ENV=development
+      - DB_URL=postgresql://root@cockroachdb:26257/singlespark?sslmode=disable
+    depends_on:
+      - cockroachdb
+
+  # ────────────────
+  # Frontend (Vue 3 + Vite)
+  # ────────────────
+  frontend:
+    command: npm run dev -- --host 0.0.0.0
+    working_dir: /app
+    volumes:
+      - ./ui:/app
+      - /app/node_modules       # Mantiene dependencias dentro del contenedor
+    ports:
+      - "5173:5173"             # Puerto de Vite
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - backend

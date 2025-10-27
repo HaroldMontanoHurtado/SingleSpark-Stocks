@@ -1,0 +1,13 @@
+# Archivos y carpetas ignoradas por Docker
+.git
+.gitignore
+node_modules
+dist
+tmp
+.DS_Store
+.vscode
+.idea
+*.log
+coverage
+.env
+.env.local
