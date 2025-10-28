@@ -1,56 +1,62 @@
-version: "3.9"
-
+# docker-compose.yml (producción / orquestación base)
 services:
+
+  # CockroachDB (single-node para dev/testing)
+  cockroachdb:
+    container_name: singlespark-cockroachdb
+    image: cockroachdb/cockroach:v25.3.3
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257" # SQL (pg wire)
+      - "8080:8080"   # Admin UI
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD-SHELL", "/cockroach/cockroach sql --insecure --host=localhost -e 'select 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - singlespark-net
+
+  # Backend (Go - Clean Architecture). Build context = repo root, Dockerfile en ./cmd/backend/Dockerfile
   backend:
     container_name: singlespark-backend
     build:
       context: .
       dockerfile: ./cmd/backend/Dockerfile
-    command: ./app
-    working_dir: /app
+      # (por defecto usa el target final/prod)
+    env_file:
+      - .env
     ports:
       - "8080:8080"
-    environment:
-      - DB_HOST=db
-      - DB_PORT=26257
-      - DB_USER=root
-      - DB_NAME=singlespark
-      - DB_SSLMODE=disable
     depends_on:
-      - db
+      cockroachdb:
+        condition: service_healthy
+    volumes:
+      # En producción no montar volúmenes; en dev lo hace override
+      - ./config:/app/config:ro
     networks:
       - singlespark-net
-    volumes:
-      - ./internal:/app/internal
-      - ./pkg:/app/pkg
-      - ./config:/app/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Frontend (Vue 3 + Vite). Build context en ./ui
   frontend:
     container_name: singlespark-frontend
     build:
       context: ./ui
       dockerfile: ./ui/Dockerfile
     ports:
-      - "5173:5173"
-    networks:
-      - singlespark-net
+      - "8082:80"   # Si se construye como static + nginx (prod). En dev override arranca Vite en 5173.
     depends_on:
       - backend
-    volumes:
-      - ./ui:/app
-      - /app/node_modules
-
-  db:
-    container_name: singlespark-db
-    image: cockroachdb/cockroach:v25.3.3
-    command: start-single-node --insecure
-    ports:
-      - "26257:26257"
-      - "8081:8080"
-    volumes:
-      - cockroach-data:/cockroach/cockroach-data
     networks:
       - singlespark-net
+    # volumenes para prod no son necesarios; override en dev monta ./ui
 
 volumes:
   cockroach-data:

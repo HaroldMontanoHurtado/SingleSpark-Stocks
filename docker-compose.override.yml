@@ -1,35 +1,39 @@
-version: "3.9"
-
 services:
-  # ────────────────
-  # Backend (Go)
-  # ────────────────
+  # Backend: usar build target "dev" (imagen con herramientas de desarrollo como air)
   backend:
-    # Sobrescribe el comando del Dockerfile para usar hot reload
-    command: sh -c "air -c .air.toml"
+    build:
+      context: .
+      dockerfile: ./cmd/backend/Dockerfile
+      target: dev
+    command: ["air", "-c", ".air.toml"]
     working_dir: /src
     volumes:
-      - ./backend:/src         # Sincroniza código local
-      - /src/tmp               # Evita conflictos con cachés
+      - ./cmd:/src/cmd
+      - ./internal:/src/internal
+      - ./pkg:/src/pkg
+      - ./config:/src/config
+      - ./backend_tmp:/src/tmp
     ports:
-      - "8081:8080"            # Mismo puerto que en prod
+      - "8081:8080"   # expone el puerto de la app en desarrollo (si tu app escucha 8080)
     environment:
       - APP_ENV=development
       - DB_URL=postgresql://root@cockroachdb:26257/singlespark?sslmode=disable
     depends_on:
       - cockroachdb
 
-  # ────────────────
-  # Frontend (Vue 3 + Vite)
-  # ────────────────
+  # Frontend: usar Vite dev server para hot reload
   frontend:
-    command: npm run dev -- --host 0.0.0.0
+    build:
+      context: ./ui
+      dockerfile: ./ui/Dockerfile
+      target: dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     working_dir: /app
     volumes:
       - ./ui:/app
-      - /app/node_modules       # Mantiene dependencias dentro del contenedor
+      - /app/node_modules
     ports:
-      - "5173:5173"             # Puerto de Vite
+      - "5173:5173"
     environment:
       - NODE_ENV=development
     depends_on:
