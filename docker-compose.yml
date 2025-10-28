@@ -1,66 +1,59 @@
-# docker-compose.yml (producción / orquestación base)
 services:
-
-  # CockroachDB (single-node para dev/testing)
-  cockroachdb:
-    container_name: singlespark-cockroachdb
-    image: cockroachdb/cockroach:v25.3.3
-    command: start-single-node --insecure
+  cockroach:
+    image: ${COCKROACH_IMAGE:-cockroachdb/cockroach:v25.3.3}
+    command: start-single-node --insecure --http-port=${COCKROACH_HTTP_PORT:-8080}
     ports:
-      - "26257:26257" # SQL (pg wire)
-      - "8080:8080"   # Admin UI
+      - "${COCKROACH_PORT:-26257}:26257"
+      - "${COCKROACH_HTTP_PORT:-8080}:${COCKROACH_HTTP_PORT:-8080}"
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
-      test: ["CMD-SHELL", "/cockroach/cockroach sql --insecure --host=localhost -e 'select 1'"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -f http://localhost:${COCKROACH_HTTP_PORT:-8080}/health || exit 1"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-    networks:
-      - singlespark-net
+      retries: 10
 
-  # Backend (Go - Clean Architecture). Build context = repo root, Dockerfile en ./cmd/backend/Dockerfile
-  backend:
-    container_name: singlespark-backend
-    build:
-      context: .
-      dockerfile: ./cmd/backend/Dockerfile
-      # (por defecto usa el target final/prod)
-    env_file:
-      - .env
-    ports:
-      - "8080:8080"
+  migrate:
+    image: migrate/migrate:v4.15.2
     depends_on:
-      cockroachdb:
+      cockroach:
         condition: service_healthy
     volumes:
-      # En producción no montar volúmenes; en dev lo hace override
-      - ./config:/app/config:ro
-    networks:
-      - singlespark-net
+      - ./migrations:/migrations
+    entrypoint: ["sh", "-c"]
+    command: >
+      "sleep 3;
+       migrate -path /migrations -database 'cockroach://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable' up || true"
+
+  backend:
+    build:
+      context: .                            # contexto = raíz del proyecto
+      dockerfile: cmd/server/Dockerfile   # ruta al Dockerfile
+    environment:
+      - DB_HOST=cockroach
+      - DB_PORT=26257
+      - DB_USER=${DB_USER:-root}
+      - DB_NAME=${DB_NAME:-singlespark}
+    ports:
+      - "${BACKEND_PORT:-8081}:8081"
+    depends_on:
+      cockroach:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
-  # Frontend (Vue 3 + Vite). Build context en ./ui
   frontend:
-    container_name: singlespark-frontend
     build:
       context: ./ui
-      dockerfile: ./ui/Dockerfile
+      dockerfile: Dockerfile
     ports:
-      - "8082:80"   # Si se construye como static + nginx (prod). En dev override arranca Vite en 5173.
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend
-    networks:
-      - singlespark-net
-    # volumenes para prod no son necesarios; override en dev monta ./ui
+      backend:
+        condition: service_started
 
 volumes:
   cockroach-data:
-
-networks:
-  singlespark-net:
-    driver: bridge

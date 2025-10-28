@@ -1,40 +1,24 @@
 services:
-  # Backend: usar build target "dev" (imagen con herramientas de desarrollo como air)
-  backend:
-    build:
-      context: .
-      dockerfile: ./cmd/backend/Dockerfile
-      target: dev
-    command: ["air", "-c", ".air.toml"]
-    working_dir: /src
-    volumes:
-      - ./cmd:/src/cmd
-      - ./internal:/src/internal
-      - ./pkg:/src/pkg
-      - ./config:/src/config
-      - ./backend_tmp:/src/tmp
-    ports:
-      - "8081:8080"   # expone el puerto de la app en desarrollo (si tu app escucha 8080)
-    environment:
-      - APP_ENV=development
-      - DB_URL=postgresql://root@cockroachdb:26257/singlespark?sslmode=disable
-    depends_on:
-      - cockroachdb
-
-  # Frontend: usar Vite dev server para hot reload
   frontend:
     build:
       context: ./ui
-      dockerfile: ./ui/Dockerfile
-      target: dev
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-    working_dir: /app
+      dockerfile: Dockerfile
     volumes:
       - ./ui:/app
       - /app/node_modules
+    command: ["npm", "run", "dev"]
     ports:
       - "5173:5173"
     environment:
-      - NODE_ENV=development
-    depends_on:
-      - backend
+      - VITE_API_BASE=http://localhost:${BACKEND_PORT:-8081}
+
+  backend:
+    build:
+      context: .                      # mantiene contexto = raíz para poder ver todos los archivos
+      dockerfile: cmd/server/Dockerfile
+    volumes:
+      - ./cmd/server:/src/cmd/server    # monta para desarrollo
+      - /go/pkg/mod                     # opcional cache del módulo
+    command: ["air"]                    # o el que uses para hot-reload
+    ports:
+      - "${BACKEND_PORT:-8081}:8081"
