@@ -1,36 +1,53 @@
-import (
-    "database/sql"
-    "net/http"
-    "os"
-    "log"
+package main
 
-    _ "github.com/jackc/pgx/v5/stdlib" // driver pgx compatible
-    "github.com/your/module/internal/infrastructure/ingestor"
-    httpint "github.com/your/module/internal/interfaces/http"
+import (
+	//"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"context"
+	"time"
 )
 
+// handler de prueba
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	_, _ = w.Write([]byte("SingleSpark Stocks backend OK\n"))
+}
+
 func main() {
-    // lee variables de entorno
-    dbURL := os.Getenv("DATABASE_URL") // ejemplo: postgresql://root@cockroach:26257/defaultdb?sslmode=disable
-    apiURL := os.Getenv("EXTERNAL_API_URL") // https://api.karenai.click/swechallenge/list
-    apiToken := os.Getenv("EXTERNAL_API_TOKEN")
+	// puerto por defecto
+	port := "8080"
+	if p := os.Getenv("PORT"); p != "" {
+		port = p
+	}
 
-    db, err := sql.Open("pgx", dbURL)
-    if err != nil {
-        log.Fatalf("open db: %v", err)
-    }
-    defer db.Close()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", helloHandler)
 
-    ing := ingestor.New(apiURL, apiToken)
-    ingestHandler := httpint.NewIngestHandler(ing, db)
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
 
-    mux := http.NewServeMux()
-    mux.Handle("/internal/fetch", ingestHandler)
-    // ejemplo: endpoint público para listar stocks (implementar en tu repo)
-    // mux.HandleFunc("/api/stocks", handlerListStocks)
+	// arrancar servidor en goroutine para poder hacer shutdown limpio
+	go func() {
+		log.Printf("Server listening on :%s\n", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
 
-    port := os.Getenv("PORT")
-    if port == "" { port = "8080" }
-    log.Printf("listening on :%s", port)
-    http.ListenAndServe(":"+port, mux)
+	// esperar señal para shutdown (Ctrl+C)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+	<-stop
+	log.Println("Shutdown signal received")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server Shutdown Failed:%+v", err)
+	}
+	log.Println("Server exited properly")
 }

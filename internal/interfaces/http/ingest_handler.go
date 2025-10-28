@@ -7,13 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/<tu-modulo>/internal/infrastructure/ingestor"
-	"github.com/<tu-modulo>/internal/infrastructure/repository"
+	"github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/ingestor"
+	"github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/repository"
 )
 
-// Nota: reemplaza github/<tu-modulo> por el module path de tu `go.mod`.
-// Ejemplo: github.com/HaroldMontanoHurtado/SingleSpark-Stocks
-
+// IngestHandler maneja la ingestión manual via HTTP.
 type IngestHandler struct {
 	Ingestor *ingestor.Ingestor
 	Repo     *repository.StocksRepo

@@ -1,9 +1,11 @@
 package ingestor
 
 import (
+	//"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -21,8 +23,8 @@ type Ingestor struct {
 // New crea un ingestor con timeout razonable.
 func New(baseURL, apiToken string) *Ingestor {
 	return &Ingestor{
-		HTTP: &http.Client{Timeout: 20 * time.Second},
-		BaseURL: baseURL,
+		HTTP:     &http.Client{Timeout: 20 * time.Second},
+		BaseURL:  baseURL,
 		APIToken: apiToken,
 	}
 }
@@ -50,34 +52,43 @@ func (i *Ingestor) FetchPage(ctx context.Context, nextPage string) ([]Item, stri
 		return nil, "", fmt.Errorf("bad status: %s", resp.Status)
 	}
 
+	// --- leer body una sola vez y poder reusarlo ---
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read body: %w", err)
+	}
+
 	var payload struct {
-		Data     []Item `json:"data"`      // muchos endpoints usan "data" o "results"
+		Data     []Item `json:"data"`
 		Results  []Item `json:"results"`
 		NextPage string `json:"next_page"`
 		Next     string `json:"next"`
 	}
 
-	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(&payload); err != nil {
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		// intenta decodificar en forma flexible
 		var generic map[string]interface{}
-		if err2 := json.NewDecoder(resp.Body).Decode(&generic); err2 != nil {
+		if err2 := json.Unmarshal(bodyBytes, &generic); err2 != nil {
 			return nil, "", fmt.Errorf("decode: %w", err)
 		}
 		return nil, "", nil
 	}
 
-	// Preferencia: Data > Results > fallback empty
+	// Preferencia: Data > Results > fallback array directo
 	var items []Item
-	if len(payload.Data) > 0 {
+	switch {
+	case len(payload.Data) > 0:
 		items = payload.Data
-	} else if len(payload.Results) > 0 {
+	case len(payload.Results) > 0:
 		items = payload.Results
-	} else {
-		// intenta decodificar todo como array
-		// (En caso de que la API devuelva directamente un array)
-		_, _ = resp.Body.Seek(0, 0) // no siempre posible; skip
-		items = []Item{}
+	default:
+		// intenta decodificar todo como array directamente
+		var arr []Item
+		if err := json.Unmarshal(bodyBytes, &arr); err == nil {
+			items = arr
+		} else {
+			items = []Item{}
+		}
 	}
 
 	// next token puede estar en varios campos

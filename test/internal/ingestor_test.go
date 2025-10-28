@@ -1,35 +1,73 @@
 package internal_test
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"context"
-	"io"
-	"strings"
+	"time"
 
-	"github.com/your/module/internal/infrastructure/ingestor"
+	"github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/ingestor"
 )
 
-func TestFetchPage_Simple(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"data":[{"Ticker":"ABC","Company":"ACME Inc","Action":"reiterated by","Rating From":"Buy","Rating To":"Buy","Target From":"10","Target To":"12"}]}`)
+// TestFetchPage simula una respuesta HTTP para probar el ingestor.
+func TestFetchPage(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		resp := map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"symbol": "AAPL", "price": 170.5},
+				{"symbol": "GOOGL", "price": 135.2},
+			},
+			"next": "",
+			"page": page,
+		}
+		b, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(b)
 	}))
-	defer ts.Close()
+	defer mockServer.Close()
 
-	ing := ingestor.New(ts.URL, "dummy")
-	items, next, err := ing.FetchPage(context.Background(), "")
+	// Crear el ingestor con la función real
+	ing := ingestor.New(mockServer.URL, "fake_token")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	items, next, err := ing.FetchPage(ctx, "")
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Fatalf("FetchPage failed: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 item got %d", len(items))
+
+	if len(items) == 0 {
+		t.Fatalf("Expected non-empty items, got %d", len(items))
 	}
+
 	if next != "" {
-		t.Fatalf("expected no next, got %s", next)
+		t.Fatalf("Expected next='' but got '%s'", next)
 	}
-	if items[0]["Ticker"] != "ABC" && items[0]["ticker"] != "ABC" {
-		// ok: check keys may be capitalized
-		t.Fatalf("unexpected ticker: %#v", items[0])
+
+	if items[0]["symbol"] != "AAPL" {
+		t.Errorf("Expected symbol=AAPL, got %v", items[0]["symbol"])
+	}
+}
+
+// TestFetchError verifica el manejo de errores HTTP.
+func TestFetchError(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer mockServer.Close()
+
+	ing := ingestor.New(mockServer.URL, "fake_token")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, _, err := ing.FetchPage(ctx, "")
+	if err == nil {
+		t.Fatal("Expected error, got nil")
 	}
 }
