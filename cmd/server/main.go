@@ -1,63 +1,36 @@
-package main
-
 import (
-	"context"
-	"database/sql"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"time"
+    "database/sql"
+    "net/http"
+    "os"
+    "log"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+    _ "github.com/jackc/pgx/v5/stdlib" // driver pgx compatible
+    "github.com/your/module/internal/infrastructure/ingestor"
+    httpint "github.com/your/module/internal/interfaces/http"
 )
 
-var db *sql.DB
-
 func main() {
-	dsn := fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
-		getenv("DB_USER", "root"),
-		getenv("DB_HOST", "cockroach"),
-		getenv("DB_PORT", "26257"),
-		getenv("DB_NAME", "singlespark"),
-	)
-	var err error
-	db, err = sql.Open("pgx", dsn)
-	if err != nil {
-		log.Fatalf("db open: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("db ping: %v", err)
-	}
-	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/api/ping", pingHandler)
-	log.Println("backend listening :8081")
-	if err := http.ListenAndServe(":8081", nil); err != nil {
-		log.Fatal(err)
-	}
-}
+    // lee variables de entorno
+    dbURL := os.Getenv("DATABASE_URL") // ejemplo: postgresql://root@cockroach:26257/defaultdb?sslmode=disable
+    apiURL := os.Getenv("EXTERNAL_API_URL") // https://api.karenai.click/swechallenge/list
+    apiToken := os.Getenv("EXTERNAL_API_TOKEN")
 
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
-}
+    db, err := sql.Open("pgx", dbURL)
+    if err != nil {
+        log.Fatalf("open db: %v", err)
+    }
+    defer db.Close()
 
-func pingHandler(w http.ResponseWriter, _ *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	var n int
-	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&n); err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Write([]byte("db pong"))
-}
+    ing := ingestor.New(apiURL, apiToken)
+    ingestHandler := httpint.NewIngestHandler(ing, db)
 
-func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
+    mux := http.NewServeMux()
+    mux.Handle("/internal/fetch", ingestHandler)
+    // ejemplo: endpoint público para listar stocks (implementar en tu repo)
+    // mux.HandleFunc("/api/stocks", handlerListStocks)
+
+    port := os.Getenv("PORT")
+    if port == "" { port = "8080" }
+    log.Printf("listening on :%s", port)
+    http.ListenAndServe(":"+port, mux)
 }
