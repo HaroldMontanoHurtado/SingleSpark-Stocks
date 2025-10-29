@@ -41,7 +41,6 @@ API Externa (Datos bursátiles)
 
 * Backend:
   + Lenguaje: Go (Golang)
-  + Framework sugerido: Gin o Fiber
   + Estructura basada en Clean Architecture
   + Módulos:
       - Conector de API externa
@@ -115,8 +114,6 @@ npm run dev
 Este proyecto se encuentra en desarrollo activo y está optimizado para funcionar en un único equipo local, sin dependencias externas innecesarias.
 El código sigue principios de mantenibilidad y escalabilidad, facilitando la incorporación de nuevas fuentes de datos o módulos de análisis en el futuro.
 
-### **Autor**
-
-**Desarrollado por:** *Harold Montano*
+**Autor:** *Harold Montano*
 
 **Rol:** *Developer*
