@@ -1,6 +1,7 @@
 services:
   cockroach:
     image: ${COCKROACH_IMAGE:-cockroachdb/cockroach:v25.3.3}
+    container_name: singlespark_cockroach
     command: start-single-node --insecure --http-port=${COCKROACH_HTTP_PORT:-8080}
     ports:
       - "${COCKROACH_PORT:-26257}:26257"
@@ -15,32 +16,60 @@ services:
 
   migrate:
     image: migrate/migrate:v4.15.2
+    container_name: singlespark_migrate
+    # Not using depends_on condition to avoid version-specific compose behavior.
+    # We still depend on the cockroach service for startup ordering.
     depends_on:
-      cockroach:
-        condition: service_healthy
+      - cockroach
     volumes:
-      - ./migrations:/migrations
+      - ./migrations:/migrations:ro
+    # Ejecutamos un pequeño script de shell que reintenta varias veces la migración.
     entrypoint: ["sh", "-c"]
     command: >
-      "sleep 3;
-       migrate -path /migrations -database 'cockroach://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable' up || true"
+      '
+      echo "Waiting for CockroachDB to be reachable...";
+      # aguarda la UI http para estar disponible (puede tardar un poco)
+      for i in $(seq 1 20); do
+        if curl -fsS http://cockroach:${COCKROACH_HTTP_PORT:-8080}/health >/dev/null 2>&1; then
+          echo "Cockroach is healthy";
+          break;
+        fi;
+        echo "waiting... ($i)";
+        sleep 2;
+      done;
+      echo "Running migrations...";
+      # Intentamos migrar varias veces en caso de timing issues (esperar DB init)
+      set -e;
+      for try in 1 2 3 4 5; do
+        migrate -path /migrations -database "postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable" up && break || {
+          echo "migrate attempt ${try} failed, retrying in 3s...";
+          sleep 3;
+        }
+      done;
+      echo "Migrations finished (or no change).";
+      '
 
   backend:
     build:
       context: .                            # contexto = raíz del proyecto
-      dockerfile: cmd/server/Dockerfile   # ruta al Dockerfile
+      dockerfile: cmd/server/Dockerfile   # ruta al Dockerfile del backend
+    container_name: singlespark_backend
     environment:
+      # construimos DB_URL ya que el backend lee DB_URL en internal/config
+      - DB_URL=postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable
       - DB_HOST=cockroach
       - DB_PORT=26257
       - DB_USER=${DB_USER:-root}
       - DB_NAME=${DB_NAME:-singlespark}
+      - PORT=${BACKEND_PORT:-8081}
     ports:
       - "${BACKEND_PORT:-8081}:8081"
     depends_on:
-      cockroach:
-        condition: service_healthy
+      - cockroach
+      - migrate
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      # NOTE: el handler en main.go expone '/healthz'
+      test: ["CMD-SHELL", "curl -f http://localhost:${BACKEND_PORT:-8081}/healthz || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -49,11 +78,14 @@ services:
     build:
       context: ./ui
       dockerfile: Dockerfile
+    container_name: singlespark_frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      backend:
-        condition: service_started
+      - backend
+    # En modo producción (build) no montamos código; override (dev) lo hará.
+    environment:
+      - VITE_API_BASE=http://localhost:${BACKEND_PORT:-8081}
 
 volumes:
   cockroach-data:

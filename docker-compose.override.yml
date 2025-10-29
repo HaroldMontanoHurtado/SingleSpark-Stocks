@@ -4,21 +4,25 @@ services:
       context: ./ui
       dockerfile: Dockerfile
     volumes:
-      - ./ui:/app
+      - ./ui:/app:cached
       - /app/node_modules
     command: ["npm", "run", "dev"]
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_BASE=http://localhost:${BACKEND_PORT:-8081}
+      # durante dev en host usamos la URL en el host para el backend.
+      - VITE_API_BASE=http://host.docker.internal:${BACKEND_PORT:-8081}
+    # En WSL/Windows, si host.docker.internal no resuelve, puede quedar como http://localhost:8081
 
   backend:
     build:
-      context: .                      # mantiene contexto = raíz para poder ver todos los archivos
+      context: .
       dockerfile: cmd/server/Dockerfile
     volumes:
-      - ./cmd/server:/src/cmd/server    # monta para desarrollo
-      - /go/pkg/mod                     # opcional cache del módulo
-    command: ["air"]                    # o el que uses para hot-reload
+      - ./cmd/server:/src/cmd/server:cached
+      - /go/pkg/mod
+    command: ["air"]
     ports:
       - "${BACKEND_PORT:-8081}:8081"
+    environment:
+      - DB_URL=postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable

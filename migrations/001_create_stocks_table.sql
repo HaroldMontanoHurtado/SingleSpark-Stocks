@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS stocks (
     rating_to STRING,
     target_from STRING,
     target_to STRING,
-    source_ts TIMESTAMP DEFAULT current_timestamp(),
-    raw_json JSONB
+    raw JSONB,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Índices para búsqueda por ticker y fecha
