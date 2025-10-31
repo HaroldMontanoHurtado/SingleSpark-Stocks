@@ -1,91 +1,90 @@
+# Ubicación del archivo (raíz): /docker-compose.yml
+
 services:
-  cockroach:
-    image: ${COCKROACH_IMAGE:-cockroachdb/cockroach:v25.3.3}
-    container_name: singlespark_cockroach
-    command: start-single-node --insecure --http-port=${COCKROACH_HTTP_PORT:-8080}
+  # ===============================
+  # 🗄️ Base de datos CockroachDB
+  # ===============================
+  cockroachdb:
+    image: cockroachdb/cockroach:v25.3.3
+    command: start-single-node --insecure
     ports:
-      - "${COCKROACH_PORT:-26257}:26257"
-      - "${COCKROACH_HTTP_PORT:-8080}:${COCKROACH_HTTP_PORT:-8080}"
+      - "26257:26257"   # puerto SQL
+      - "8082:8082"     # interfaz web de administración
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:${COCKROACH_HTTP_PORT:-8080}/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  migrate:
-    image: migrate/migrate:v4.15.2
-    container_name: singlespark_migrate
-    # Not using depends_on condition to avoid version-specific compose behavior.
-    # We still depend on the cockroach service for startup ordering.
-    depends_on:
-      - cockroach
-    volumes:
-      - ./migrations:/migrations:ro
-    # Ejecutamos un pequeño script de shell que reintenta varias veces la migración.
-    entrypoint: ["sh", "-c"]
-    command: >
-      '
-      echo "Waiting for CockroachDB to be reachable...";
-      # aguarda la UI http para estar disponible (puede tardar un poco)
-      for i in $(seq 1 20); do
-        if curl -fsS http://cockroach:${COCKROACH_HTTP_PORT:-8080}/health >/dev/null 2>&1; then
-          echo "Cockroach is healthy";
-          break;
-        fi;
-        echo "waiting... ($i)";
-        sleep 2;
-      done;
-      echo "Running migrations...";
-      # Intentamos migrar varias veces en caso de timing issues (esperar DB init)
-      set -e;
-      for try in 1 2 3 4 5; do
-        migrate -path /migrations -database "postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable" up && break || {
-          echo "migrate attempt ${try} failed, retrying in 3s...";
-          sleep 3;
-        }
-      done;
-      echo "Migrations finished (or no change).";
-      '
-
-  backend:
-    build:
-      context: .                            # contexto = raíz del proyecto
-      dockerfile: cmd/server/Dockerfile   # ruta al Dockerfile del backend
-    container_name: singlespark_backend
-    environment:
-      # construimos DB_URL ya que el backend lee DB_URL en internal/config
-      - DB_URL=postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable
-      - DB_HOST=cockroach
-      - DB_PORT=26257
-      - DB_USER=${DB_USER:-root}
-      - DB_NAME=${DB_NAME:-singlespark}
-      - PORT=${BACKEND_PORT:-8081}
-    ports:
-      - "${BACKEND_PORT:-8081}:8081"
-    depends_on:
-      - cockroach
-      - migrate
-    healthcheck:
-      # NOTE: el handler en main.go expone '/healthz'
-      test: ["CMD-SHELL", "curl -f http://localhost:${BACKEND_PORT:-8081}/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health?ready=1 || exit 1"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 20
+    restart: unless-stopped
 
-  frontend:
+  # ===============================
+  # ⚙️ Backend Go
+  # ===============================
+  backend:
     build:
-      context: ./ui
-      dockerfile: Dockerfile
-    container_name: singlespark_frontend
-    ports:
-      - "${FRONTEND_PORT:-80}:80"
+      context: .
+      dockerfile: cmd/server/Dockerfile
     depends_on:
-      - backend
-    # En modo producción (build) no montamos código; override (dev) lo hará.
+      cockroachdb:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
     environment:
-      - VITE_API_BASE=http://localhost:${BACKEND_PORT:-8081}
+      DB_HOST: cockroachdb
+      DB_PORT: "26257"
+      DB_USER: root
+      DB_PASS: ""
+      DB_NAME: singlespark
+      DB_SSLMODE: disable
+      EXTERNAL_API_URL: "https://api.karenai.click/swechallenge/list"
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-""}
+      HTTP_PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./migrations:/app/migrations:ro
+    restart: on-failure
+
+  # ===============================
+  # 🧱 db_init — inicializador automático
+  # ===============================
+  # Este servicio crea la base de datos 'singlespark' y aplica las migraciones
+  # automáticamente cuando levantas el entorno. Se ejecuta una sola vez.
+  # Si deseas hacerlo manualmente, puedes comentar este bloque.
+  db_init:
+    image: cockroachdb/cockroach:v25.3.3
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "sleep 5 &&
+        ./cockroach sql --insecure --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
+        ./cockroach sql --insecure --database=singlespark < /migrations/001_create_stocks_table.sql ||
+        echo 'Migrations may already exist'"
+    volumes:
+      - ./migrations:/migrations:ro
+    restart: "no"
+
+  # ===============================
+  # 🌐 Frontend Vue 3 (comentado)
+  # ===============================
+  # ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: ./ui/Dockerfile
+  #   ports:
+  #     - "5173:5173" # puerto por defecto de Vite
+  #   depends_on:
+  #     - backend
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8080
+  #   restart: on-failure
+  #   volumes:
+  #     - ./ui:/app
+  #     - /app/node_modules
 
 volumes:
   cockroach-data:

@@ -1,3 +1,5 @@
+#Ubicación del archivo: /ui/Dockefile
+# Docker file para el frontend
 # Etapa de construcción
 FROM node:20-alpine AS build
 

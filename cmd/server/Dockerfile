@@ -1,24 +1,38 @@
-# Etapa de compilación
+# Ubicación del archivo: /cmd/server/Dockefile
+# Dockerfile para el backend
+# ======================================================
+# Etapa de compilación (builder)
+# ======================================================
 FROM golang:1.21-alpine AS builder
 
-WORKDIR /src
-ENV CGO_ENABLED=0
+WORKDIR /app
+RUN apk add --no-cache git
 
-# Copiar solo los archivos de dependencias desde la raíz
+# Copiamos dependencias primero para aprovechar la caché
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copiar el código fuente del servidor
-COPY cmd/server ./cmd/server
+# Copiamos todo el proyecto (el go.mod está en raíz)
+COPY . .
 
-# Compilar el binario
-RUN go build -ldflags="-s -w" -o /app/server ./cmd/server
+# Compilamos el backend (ubicado en cmd/server)
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/backend ./cmd/server
 
-# Etapa final
-FROM gcr.io/distroless/static-debian11
+# ======================================================
+# Etapa de ejecución
+# ======================================================
+FROM alpine:3.18
 
-COPY --from=builder /app/server /server
+RUN apk add --no-cache ca-certificates curl
+WORKDIR /app
+
+# Copiamos el binario
+COPY --from=builder /app/bin/backend /usr/local/bin/backend
+
+# Copiamos las migraciones si existen
+COPY migrations /app/migrations
 
 EXPOSE 8080
-USER nonroot:nonroot
-ENTRYPOINT ["/server"]
+ENV HTTP_PORT=8080
+
+CMD ["/usr/local/bin/backend"]

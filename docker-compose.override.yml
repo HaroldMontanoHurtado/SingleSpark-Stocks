@@ -1,28 +1,37 @@
-services:
-  frontend:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile
-    volumes:
-      - ./ui:/app:cached
-      - /app/node_modules
-    command: ["npm", "run", "dev"]
-    ports:
-      - "5173:5173"
-    environment:
-      # durante dev en host usamos la URL en el host para el backend.
-      - VITE_API_BASE=http://host.docker.internal:${BACKEND_PORT:-8081}
-    # En WSL/Windows, si host.docker.internal no resuelve, puede quedar como http://localhost:8081
+# Ubicación del archivo (raíz): /docker-compose.override.yml
 
+services:
   backend:
-    build:
-      context: .
-      dockerfile: cmd/server/Dockerfile
+    command: sh -c "go run ./cmd/server -port ${HTTP_PORT:-8080}"
     volumes:
-      - ./cmd/server:/src/cmd/server:cached
-      - /go/pkg/mod
-    command: ["air"]
-    ports:
-      - "${BACKEND_PORT:-8081}:8081"
+      - ./:/app:delegated
+    working_dir: /app
     environment:
-      - DB_URL=postgresql://root@cockroach:26257/${DB_NAME:-singlespark}?sslmode=disable
+      GOFLAGS: -mod=mod
+      DB_HOST: cockroachdb
+      DB_PORT: "26257"
+      DB_USER: root
+      DB_PASS: ""
+      DB_NAME: singlespark
+      DB_SSLMODE: disable
+      EXTERNAL_API_URL: "https://api.karenai.click/swechallenge/list"
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-""}
+      HTTP_PORT: "8080"
+    depends_on:
+      cockroachdb:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # ui:
+  #   command: sh -c "npm run dev"
+  #   volumes:
+  #     - ./ui:/app
+  #     - /app/node_modules
+  #   ports:
+  #     - "5173:5173"
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8080
+  #   depends_on:
+  #     - backend
