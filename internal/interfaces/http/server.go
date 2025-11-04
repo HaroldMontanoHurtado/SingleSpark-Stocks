@@ -1,21 +1,21 @@
 package httpapi
 
 import (
-    //"context"
-    "log"
-    "net/http"
-    "time"
+	"log"
+	"net/http"
+	"time"
 )
 
+// Serve lanza el servidor HTTP con configuración de timeout.
 func Serve(addr string, handler http.Handler) error {
-    srv := &http.Server{
-        Addr:         addr,
-        Handler:      handler,
-        ReadTimeout:  15 * time.Second,
-        WriteTimeout: 15 * time.Second,
-        IdleTimeout:  60 * time.Second,
-    }
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
 
-    log.Printf("starting server on %s", addr)
-    return srv.ListenAndServe()
+	log.Printf("Starting HTTP server on %s", addr)
+	return srv.ListenAndServe()
 }

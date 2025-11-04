@@ -14,7 +14,7 @@ import (
     "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/config"
     extern "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/extern"
     db "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/db"
-    stockusecase "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/usecase/stock"
+    stockusecase "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/usecase/stockusecase"
     httpapi "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/interfaces/http"
     "github.com/go-chi/chi/v5"
 )
