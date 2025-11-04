@@ -9,14 +9,14 @@ services:
     command: start-single-node --insecure
     ports:
       - "26257:26257"   # puerto SQL
-      - "8082:8082"     # interfaz web de administración
+      - "8082:8080"     # interfaz web de administración
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health?ready=1 || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      test: ["CMD", "cockroach", "sql", "--insecure", "--host=localhost:26257", "-e", "SELECT 1;"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   # ===============================
@@ -61,12 +61,13 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "sleep 5 &&
-        ./cockroach sql --insecure --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
-        ./cockroach sql --insecure --database=singlespark < /migrations/001_create_stocks_table.sql ||
+        ./cockroach sql --insecure --host=cockroachdb:26257 --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
+        ./cockroach sql --insecure --host=cockroachdb:26257 --database=singlespark < /migrations/001_create_stocks_table.sql ||
         echo 'Migrations may already exist'"
     volumes:
       - ./migrations:/migrations:ro
     restart: "no"
+
 
   # ===============================
   # 🌐 Frontend Vue 3 (comentado)

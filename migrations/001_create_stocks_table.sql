@@ -1,4 +1,4 @@
--- migrations/001_create_recommendations.sql
+-- dirección del archivo: /migrations/001_create_recommendations.sql
 -- Crea la tabla 'stocks' para almacenar recomendaciones y el JSON raw recibido.
 -- Si tu CockroachDB no soporta JSONB, cambia JSONB por JSON o BYTES según corresponda.
 
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS stocks (
     target_from STRING,
     target_to STRING,
     raw JSONB,
+    source_ts TIMESTAMPTZ DEFAULT now(),
     created_at TIMESTAMPTZ DEFAULT now()
 );
 

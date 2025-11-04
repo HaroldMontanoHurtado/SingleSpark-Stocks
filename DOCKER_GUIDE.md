@@ -81,6 +81,12 @@ Cuando termine, verás logs en consola indicando que los tres servicios están c
 | CockroachDB Admin UI | http://localhost:8081 | Panel de administración de la base de datos. |
 
 ### 🧱 Comandos esenciales
+
+Reconstruye la imagen desde cero
+~~~
+docker compose build --no-cache
+~~~
+
 **▶️ Levantar el proyecto**
 ~~~
 docker compose up

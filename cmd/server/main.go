@@ -5,6 +5,7 @@ import (
     "flag"
     "fmt"
     "log"
+    "net/http"
     "os"
     "os/signal"
     "syscall"
@@ -24,52 +25,57 @@ func main() {
         log.Fatalf("load config: %v", err)
     }
 
-    // optional flag to override port
     var port string
     flag.StringVar(&port, "port", cfg.HTTPPort, "http server port")
     flag.Parse()
 
-    // connect to DB
+    // Conexión a la base de datos
     pg, err := db.NewPostgresRepository(cfg.PostgresConnString())
     if err != nil {
         log.Fatalf("connect db: %v", err)
     }
-    // create external client
+
+    // Cliente externo y usecase de ingesta
     client := extern.NewClient(cfg.ExternalAPIURL, cfg.ExternalAPIKey)
     ing := stockusecase.NewIngestor(client, pg)
 
+    // Handlers HTTP
     handlers := &httpapi.Handlers{
         Repo:     pg,
         Ingestor: ing,
     }
 
-    // router
+    // Router principal
     r := chi.NewRouter()
-    // mount our handlers
     r.Mount("/", httpapi.NewRouter(handlers))
 
-    // graceful shutdown
+    // Dirección del servidor
     srvAddr := fmt.Sprintf(":%s", port)
+
+    // Servidor HTTP y apagado limpio
     srv := &http.Server{
         Addr:    srvAddr,
         Handler: r,
     }
 
     go func() {
-        log.Printf("server listening on %s", srvAddr)
+        log.Printf("Server running on %s", srvAddr)
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatalf("listen error: %v", err)
+            log.Fatalf("listen: %v", err)
         }
     }()
 
-    // trap signals
-    stop := make(chan os.Signal, 1)
-    signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-    <-stop
+    // Esperar señal de cierre
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+    log.Println("Shutting down server...")
+
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
     if err := srv.Shutdown(ctx); err != nil {
-        log.Printf("server shutdown error: %v", err)
+        log.Fatalf("Server forced to shutdown: %v", err)
     }
-    log.Println("server stopped")
+
+    log.Println("Server exited properly")
 }

@@ -1,3 +1,5 @@
+-- dirección del archivo: /migrations/0001_init.up.sql
+
 CREATE DATABASE IF NOT EXISTS singlespark;
 
 CREATE TABLE IF NOT EXISTS users (
