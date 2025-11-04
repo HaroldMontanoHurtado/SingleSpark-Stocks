@@ -102,6 +102,11 @@ docker compose up --build
 docker compose down
 ~~~
 
+**❌ Elimina contenedores y volúmenes**
+~~~
+docker compose down -v 
+~~~
+
 **🧼 Detener y eliminar todos los contenedores, imágenes y volúmenes**
 ~~~
 docker compose down --volumes --rmi all
