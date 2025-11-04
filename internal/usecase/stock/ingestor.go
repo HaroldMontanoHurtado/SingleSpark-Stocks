@@ -10,7 +10,7 @@ import (
 )
 
 type Ingestor interface {
-    IngestOnce(ctx context.Context) (int, error)
+    Ingest(ctx context.Context) (int, error)
 }
 
 type ingestor struct {
@@ -22,7 +22,7 @@ func NewIngestor(client *extern.Client, repo *repo.PGRepo) Ingestor {
     return &ingestor{client: client, repo: repo}
 }
 
-func (i *ingestor) IngestOnce(ctx context.Context) (int, error) {
+func (i *ingestor) Ingest(ctx context.Context) (int, error) {
     items, _, err := i.client.FetchList(ctx, "")
     if err != nil {
         return 0, err

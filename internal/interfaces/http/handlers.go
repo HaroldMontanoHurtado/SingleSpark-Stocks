@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-    "context"
+    //"context"
     "encoding/json"
     "net/http"
     "strconv"
@@ -42,7 +42,7 @@ func (h *Handlers) ListStocks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) Ingest(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    n, err := h.Ingestor.IngestOnce(ctx)
+    n, err := h.Ingestor.Ingest(ctx)
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return

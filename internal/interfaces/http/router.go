@@ -2,7 +2,6 @@ package httpapi
 
 import (
     "net/http"
-
     "github.com/go-chi/chi/v5"
 )
 
@@ -14,8 +13,10 @@ func NewRouter(h *Handlers) http.Handler {
         w.Write([]byte(`{"status":"ok"}`))
     })
 
-    r.Get("/stocks", h.ListStocks)
-    r.Post("/ingest", h.Ingest)
+    r.Route("/api", func(r chi.Router) {
+        r.Get("/stocks", h.ListStocks)
+        r.Post("/ingest", h.Ingest)
+})
 
     return r
 }
