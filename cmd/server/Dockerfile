@@ -1,38 +1,45 @@
-# Ubicación del archivo: /cmd/server/Dockefile
-# Dockerfile para el backend
-# ======================================================
+# /cmd/server/Dockerfile
+# Dockerfile para el backend (multi-stage)
+# --------------------------------------------------------
+
 # Etapa de compilación (builder)
-# ======================================================
 FROM golang:1.21-alpine AS builder
 
-WORKDIR /app
-RUN apk add --no-cache git
+WORKDIR /src
+# herramientas necesarias
+RUN apk add --no-cache git build-base
 
-# Copiamos dependencias primero para aprovechar la caché
+# Copiamos go.mod/go.sum para cached deps
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copiamos todo el proyecto (el go.mod está en raíz)
+# Copiamos el resto del proyecto
 COPY . .
 
-# Compilamos el backend (ubicado en cmd/server)
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/backend ./cmd/server
+# Compilamos el binario del backend (paquete en cmd/server)
+# Salida directa al path final esperado por docker-compose.override (/usr/local/bin/backend)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /usr/local/bin/backend ./cmd/server
 
-# ======================================================
-# Etapa de ejecución
-# ======================================================
+# Etapa runtime
 FROM alpine:3.18
 
 RUN apk add --no-cache ca-certificates curl
+
+# Crear directorio de trabajo
 WORKDIR /app
 
-# Copiamos el binario
-COPY --from=builder /app/bin/backend /usr/local/bin/backend
+# Copiamos binario ya compilado
+COPY --from=builder /usr/local/bin/backend /usr/local/bin/backend
 
-# Copiamos las migraciones si existen
+# Copiamos migraciones (solo si existen)
 COPY migrations /app/migrations
 
-EXPOSE 8080
-ENV HTTP_PORT=8080
+# Puerto por defecto en contenedor — puede ser sobrescrito por docker-compose/.env
+ENV HTTP_PORT=8081
+EXPOSE 8081
 
-CMD ["/usr/local/bin/backend"]
+# Usuario no-root opcional (si quieres seguridad extra)
+# RUN addgroup -S app && adduser -S -G app app
+# USER app
+
+ENTRYPOINT ["/usr/local/bin/backend"]

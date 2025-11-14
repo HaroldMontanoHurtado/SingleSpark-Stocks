@@ -94,7 +94,7 @@ docker compose up
 
 **🛠️ Reconstruir imágenes (por cambios en código o Dockerfile)**
 ~~~
-docker compose up --build
+ 
 ~~~
 
 **⏹️ Detener los contenedores**

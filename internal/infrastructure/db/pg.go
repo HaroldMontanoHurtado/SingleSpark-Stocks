@@ -23,7 +23,7 @@ func NewPGRepo(ctx context.Context, connString string) (*PGRepo, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Opciones tuning si se desea
+	// Opciones tuning si se desee
 	cfg.MaxConns = 8
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -44,9 +44,11 @@ func (p *PGRepo) Save(s *stock.Stock) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
 	}
-	rawJSON := json.RawMessage(s.Raw)
+	var rawJSON json.RawMessage
 	if s.Raw == "" {
 		rawJSON = json.RawMessage([]byte("null"))
+	} else {
+		rawJSON = json.RawMessage([]byte(s.Raw))
 	}
 	_, err := p.pool.Exec(context.Background(),
 		`INSERT INTO stocks (id, ticker, company, brokerage, action, rating_from, rating_to, target_from, target_to, raw, created_at)
@@ -94,16 +96,20 @@ func (p *PGRepo) SaveBatch(stocks []*stock.Stock) error {
 	        created_at = EXCLUDED.created_at`
 
 	for _, s := range stocks {
+		if s == nil {
+			continue
+		}
 		if s.ID == "" {
 			s.ID = uuid.New().String()
 		}
-		rawJSON := json.RawMessage(s.Raw)
+		var rawJSON json.RawMessage
 		if s.Raw == "" {
 			rawJSON = json.RawMessage([]byte("null"))
+		} else {
+			rawJSON = json.RawMessage([]byte(s.Raw))
 		}
-		_, err := tx.Exec(ctx, stmt,
-			s.ID, s.Ticker, s.Company, s.Brokerage, s.Action, s.RatingFrom, s.RatingTo, s.TargetFrom, s.TargetTo, rawJSON, s.CreatedAt)
-		if err != nil {
+		if _, err := tx.Exec(ctx, stmt,
+			s.ID, s.Ticker, s.Company, s.Brokerage, s.Action, s.RatingFrom, s.RatingTo, s.TargetFrom, s.TargetTo, rawJSON, s.CreatedAt); err != nil {
 			return err
 		}
 	}
@@ -117,9 +123,9 @@ func (p *PGRepo) SaveBatch(stocks []*stock.Stock) error {
 func (p *PGRepo) List(limit, offset int) ([]*stock.Stock, error) {
 	rows, err := p.pool.Query(context.Background(),
 		`SELECT id, ticker, company, brokerage, action, rating_from, rating_to, target_from, target_to, raw, created_at
-         FROM stocks
-         ORDER BY created_at DESC
-         LIMIT $1 OFFSET $2`, limit, offset)
+        FROM stocks
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +148,9 @@ func (p *PGRepo) List(limit, offset int) ([]*stock.Stock, error) {
 func (p *PGRepo) FindByTicker(ticker string) ([]*stock.Stock, error) {
 	rows, err := p.pool.Query(context.Background(),
 		`SELECT id, ticker, company, brokerage, action, rating_from, rating_to, target_from, target_to, raw, created_at
-         FROM stocks
-         WHERE ticker = $1
-         ORDER BY created_at DESC`, ticker)
+        FROM stocks
+        WHERE ticker = $1
+        ORDER BY created_at DESC`, ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +173,12 @@ func (p *PGRepo) FindByTicker(ticker string) ([]*stock.Stock, error) {
 // Esta función la exportamos para usarla desde el usecase/ingestor.
 func ParseExternalItem(m map[string]interface{}) (*stock.Stock, error) {
 	// Aquí hay heurística: adapta esto al JSON real de la API.
-	// Buscamos claves comunes: "ticker", "symbol", "company", "title", etc.
 	getStr := func(keys ...string) string {
 		for _, k := range keys {
 			if v, ok := m[k]; ok && v != nil {
 				if s, ok := v.(string); ok {
 					return s
 				}
-				// si viene como número, convertir
 				if b, err := json.Marshal(v); err == nil {
 					return string(b)
 				}
@@ -196,7 +200,6 @@ func ParseExternalItem(m map[string]interface{}) (*stock.Stock, error) {
 	rawb, _ := json.Marshal(m)
 
 	if ticker == "" && company == "" {
-		// no tiene datos útiles
 		return nil, fmt.Errorf("missing ticker/company in external item")
 	}
 

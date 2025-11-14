@@ -8,8 +8,8 @@ services:
     image: cockroachdb/cockroach:v25.3.3
     command: start-single-node --insecure
     ports:
-      - "26257:26257"   # puerto SQL
-      - "8082:8080"     # interfaz web de administración
+      - "26257:26257"
+      - "8082:8080"
     volumes:
       - cockroach-data:/cockroach/cockroach-data
     healthcheck:
@@ -38,11 +38,11 @@ services:
       DB_PASS: ""
       DB_NAME: singlespark
       DB_SSLMODE: disable
-      EXTERNAL_API_URL: "https://api.karenai.click/swechallenge/list"
-      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-""}
-      HTTP_PORT: "8080"
+      EXTERNAL_API_URL: "${EXTERNAL_API_URL:-https://api.karenai.click/swechallenge/list}"
+      EXTERNAL_API_KEY: "${EXTERNAL_API_KEY:-}"
+      HTTP_PORT: "${HTTP_PORT:-8081}"
     ports:
-      - "8080:8080"
+      - "${HTTP_PORT:-8081}:${HTTP_PORT:-8081}"
     volumes:
       - ./migrations:/app/migrations:ro
     restart: on-failure
@@ -60,10 +60,18 @@ services:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "sleep 5 &&
-        ./cockroach sql --insecure --host=cockroachdb:26257 --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
-        ./cockroach sql --insecure --host=cockroachdb:26257 --database=singlespark < /migrations/001_create_stocks_table.sql ||
-        echo 'Migrations may already exist'"
+      "set -euo pipefail
+       echo '🕘 Esperando 5s...' && sleep 5
+       echo '🔧 Creando DB singlespark si no existe...' &&
+       ./cockroach sql --insecure --host=cockroachdb:26257 --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
+       echo '📁 Aplicando migraciones...' &&
+       for f in $(ls -1 /migrations/*.sql 2>/dev/null | sort); do
+         echo \"-- Ejecutando $f --\";
+         ./cockroach sql --insecure --host=cockroachdb:26257 --database=singlespark < \"$f\" || {
+           echo \"ERROR al ejecutar $f\" >&2; exit 1;
+         }
+       done
+       echo '✅ Migraciones completadas.'"
     volumes:
       - ./migrations:/migrations:ro
     restart: "no"

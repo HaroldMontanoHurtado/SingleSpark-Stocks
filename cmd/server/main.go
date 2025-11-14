@@ -1,81 +1,45 @@
 package main
 
 import (
-    "context"
-    "flag"
-    "fmt"
-    "log"
-    "net/http"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"log"
 
-    "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/config"
-    extern "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/extern"
-    db "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/db"
-    stockusecase "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/usecase/stockusecase"
-    httpapi "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/interfaces/http"
-    "github.com/go-chi/chi/v5"
+	"github.com/HaroldMontanoHurtado/SingleSpark-Stocks/config"
+	extern "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/extern"
+	db "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/db"
+	httpapi "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/interfaces/http"
+	stockusecase "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/usecase/stockusecase"
 )
 
 func main() {
-    cfg, err := config.Load()
-    if err != nil {
-        log.Fatalf("load config: %v", err)
-    }
+	// Cargar configuración desde .env (si existe) y entorno.
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config load: %v", err)
+	}
 
-    var port string
-    flag.StringVar(&port, "port", cfg.HTTPPort, "http server port")
-    flag.Parse()
+	// Conectar a la DB (context pasado)
+	pg, err := db.NewPGRepo(context.Background(), cfg.PostgresConnString())
+	if err != nil {
+		log.Fatalf("db connect: %v", err)
+	}
+	defer pg.Close()
 
-    // Conexión a la base de datos
-    pg, err := db.NewPGRepo(context.Background(), cfg.PostgresConnString())
-    if err != nil {
-        log.Fatalf("connect db: %v", err)
-    }
+	// Cliente externo y usecase de ingesta
+	client := extern.NewClient(cfg.ExternalAPIURL, cfg.ExternalAPIKey)
+	ing := stockusecase.NewIngestor(client, pg)
 
-    // Cliente externo y usecase de ingesta
-    client := extern.NewClient(cfg.ExternalAPIURL, cfg.ExternalAPIKey)
-    ing := stockusecase.NewIngestor(client, pg)
+	// Handlers HTTP
+	handlers := &httpapi.Handlers{
+		Repo:     pg,
+		Ingestor: ing,
+	}
 
-    // Handlers HTTP
-    handlers := &httpapi.Handlers{
-        Repo:     pg,
-        Ingestor: ing,
-    }
+	// Router y servidor (usa el router que ya tienes en internal/interfaces/http)
+	router := httpapi.NewRouter(handlers)
 
-    // Router principal
-    r := chi.NewRouter()
-    r.Mount("/", httpapi.NewRouter(handlers))
-
-    // Dirección del servidor
-    srvAddr := fmt.Sprintf(":%s", port)
-
-    // Servidor HTTP y apagado limpio
-    srv := &http.Server{
-        Addr:    srvAddr,
-        Handler: r,
-    }
-
-    go func() {
-        log.Printf("Server running on %s", srvAddr)
-        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatalf("listen: %v", err)
-        }
-    }()
-
-    // Esperar señal de cierre
-    quit := make(chan os.Signal, 1)
-    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-    <-quit
-    log.Println("Shutting down server...")
-
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    if err := srv.Shutdown(ctx); err != nil {
-        log.Fatalf("Server forced to shutdown: %v", err)
-    }
-
-    log.Println("Server exited properly")
+	// Usamos el Serve que ya existe en internal/interfaces/http/server.go para timeouts si quieres:
+	if err := httpapi.Serve(":"+cfg.HTTPPort, router); err != nil {
+		log.Fatalf("server: %v", err)
+	}
 }
