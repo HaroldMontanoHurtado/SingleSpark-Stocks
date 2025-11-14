@@ -1,12 +1,13 @@
 package stockusecase
 
 import (
-    "context"
-    "fmt"
+	"context"
+	"fmt"
+	"log"
 
-    extern "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/extern"
-    repo "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/db"
-    "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/dominio/stock"
+	"github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/dominio/stock"
+	repo "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/db"
+	extern "github.com/HaroldMontanoHurtado/SingleSpark-Stocks/internal/infrastructure/extern"
 )
 
 type Ingestor interface {
@@ -31,8 +32,7 @@ func (i *ingestor) Ingest(ctx context.Context) (int, error) {
     for _, it := range items {
         s, perr := repo.ParseExternalItem(it)
         if perr != nil {
-            // continue but log
-            continue
+            log.Printf("parse error on item: %v", perr)
         }
         parsed = append(parsed, s)
     }

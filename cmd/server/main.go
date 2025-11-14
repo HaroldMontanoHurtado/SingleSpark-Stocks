@@ -30,7 +30,7 @@ func main() {
     flag.Parse()
 
     // Conexión a la base de datos
-    pg, err := db.NewPostgresRepository(cfg.PostgresConnString())
+    pg, err := db.NewPGRepo(context.Background(), cfg.PostgresConnString())
     if err != nil {
         log.Fatalf("connect db: %v", err)
     }

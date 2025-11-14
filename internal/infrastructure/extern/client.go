@@ -1,98 +1,106 @@
 package extern
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "io"
-    "net/http"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
 )
 
+// Client es un cliente simple para la API externa.
 type Client struct {
-    url   string
-    token string
-    http  *http.Client
+	BaseURL string
+	APIKey  string
+	HTTP    *http.Client
 }
 
-func NewClient(url, token string) *Client {
-    return &Client{
-        url:   url,
-        token: token,
-        http: &http.Client{
-            Timeout: 15 * time.Second,
-        },
-    }
+// NewClient crea el cliente.
+func NewClient(baseURL, apiKey string) *Client {
+	return &Client{
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+		HTTP: &http.Client{
+			Timeout: 15 * time.Second,
+		},
+	}
 }
 
-// FetchList performs GET and returns []map[string]interface{} (raw items)
-func (c *Client) FetchList(ctx context.Context, nextPage string) ([]map[string]interface{}, string, error) {
-    req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
-    if err != nil {
-        return nil, "", err
-    }
-    if c.token != "" {
-        req.Header.Set("Authorization", "Bearer "+c.token)
-    }
-    req.Header.Set("Content-Type", "application/json")
+// FetchList obtiene la lista desde la API externa.
+// Devuelve: items (slice de map[string]interface{}), raw bytes, error.
+func (c *Client) FetchList(ctx context.Context, query string) ([]map[string]interface{}, []byte, error) {
+	// Si la API admite query params, podríamos concatenar query; por ahora usamos BaseURL directo.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL, nil)
+	if err != nil {
+		return nil, nil, err
+	}
 
-    q := req.URL.Query()
-    if nextPage != "" {
-        q.Set("next_page", nextPage)
-        req.URL.RawQuery = q.Encode()
-    }
+	// Encabezado de autenticación (si la API lo requiere)
+	if c.APIKey != "" {
+		// Ajusta si la API usa Authorization Bearer o x-api-key
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.APIKey))
+		req.Header.Set("X-API-Key", c.APIKey) // redundante; algunos endpoints usan uno u otro
+	}
+	req.Header.Set("Accept", "application/json")
 
-    resp, err := c.http.Do(req)
-    if err != nil {
-        return nil, "", err
-    }
-    defer resp.Body.Close()
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode >= 400 {
-        body, _ := io.ReadAll(resp.Body)
-        return nil, "", fmt.Errorf("external api returned %d: %s", resp.StatusCode, string(body))
-    }
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, body, fmt.Errorf("external api status %d: %s", resp.StatusCode, string(body))
+	}
 
-    var data map[string]interface{}
-    dec := json.NewDecoder(resp.Body)
-    dec.UseNumber()
-    if err := dec.Decode(&data); err != nil {
-        return nil, "", err
-    }
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
 
-    // The response shape may vary; try to extract a list
-    if list, ok := data["data"].([]interface{}); ok {
-        out := make([]map[string]interface{}, 0, len(list))
-        for _, item := range list {
-            if m, ok := item.(map[string]interface{}); ok {
-                out = append(out, m)
-            }
-        }
-        // check for next_page token
-        next := ""
-        if np, ok := data["next_page"].(string); ok {
-            next = np
-        }
-        return out, next, nil
-    }
+	// Intentamos decodificar a un formato flexible: una lista de objetos.
+	var parsed interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, body, err
+	}
 
-    // fallback: maybe the top-level is an array
-    if arr, ok := data["items"].([]interface{}); ok {
-        out := make([]map[string]interface{}, 0, len(arr))
-        for _, item := range arr {
-            if m, ok := item.(map[string]interface{}); ok {
-                out = append(out, m)
-            }
-        }
-        return out, "", nil
-    }
+	// Normalizar a []map[string]interface{}
+	var items []map[string]interface{}
+	switch v := parsed.(type) {
+	case []interface{}:
+		for _, it := range v {
+			if m, ok := it.(map[string]interface{}); ok {
+				items = append(items, m)
+			}
+		}
+	case map[string]interface{}:
+		// Muchas APIs devuelven {"data": [...]} o {"items": [...]}
+		if maybe, ok := v["data"]; ok {
+			if arr, ok := maybe.([]interface{}); ok {
+				for _, it := range arr {
+					if m, ok := it.(map[string]interface{}); ok {
+						items = append(items, m)
+					}
+				}
+			}
+		} else if maybe, ok := v["items"]; ok {
+			if arr, ok := maybe.([]interface{}); ok {
+				for _, it := range arr {
+					if m, ok := it.(map[string]interface{}); ok {
+						items = append(items, m)
+					}
+				}
+			}
+		} else {
+			// si el map es un solo item, devolverlo como slice de 1
+			items = append(items, v)
+		}
+	default:
+		// no reconocido
+		return nil, body, fmt.Errorf("unexpected external payload type %T", v)
+	}
 
-    // if root is array
-    if arrRoot, ok := data[""].([]interface{}); ok {
-        _ = arrRoot
-    }
-
-    // as last fallback, try to see if top-level is an array by re-decoding raw body (we already consumed it)
-    // but since we already decoded, try to convert whole map to a single-item list
-    return []map[string]interface{}{data}, "", nil
+	return items, body, nil
 }
