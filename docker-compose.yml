@@ -60,18 +60,18 @@ services:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "set -euo pipefail
-       echo '🕘 Esperando 5s...' && sleep 5
-       echo '🔧 Creando DB singlespark si no existe...' &&
-       ./cockroach sql --insecure --host=cockroachdb:26257 --execute 'CREATE DATABASE IF NOT EXISTS singlespark;' &&
-       echo '📁 Aplicando migraciones...' &&
-       for f in $(ls -1 /migrations/*.sql 2>/dev/null | sort); do
-         echo \"-- Ejecutando $f --\";
-         ./cockroach sql --insecure --host=cockroachdb:26257 --database=singlespark < \"$f\" || {
-           echo \"ERROR al ejecutar $f\" >&2; exit 1;
-         }
-       done
-       echo '✅ Migraciones completadas.'"
+      set -euo pipefail;
+      echo '🕘 Esperando 5s...' && sleep 5;
+      echo '🔧 Creando DB singlespark si no existe...';
+      cockroach sql --insecure --host=cockroachdb:26257 --execute 'CREATE DATABASE IF NOT EXISTS singlespark;';
+      echo '📁 Aplicando migraciones...';
+      for f in $(ls -1 /migrations/*.sql 2>/dev/null | sort); do
+        echo "-- Ejecutando $$f --"; 
+        cockroach sql --insecure --host=cockroachdb:26257 --database=singlespark < "$$f" || {
+          echo "ERROR al ejecutar $$f" >&2; exit 1;
+        };
+      done;
+      echo '✅ Migraciones completadas.';
     volumes:
       - ./migrations:/migrations:ro
     restart: "no"
